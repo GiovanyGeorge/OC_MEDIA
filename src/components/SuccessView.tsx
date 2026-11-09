@@ -138,7 +138,7 @@ export const SuccessView: React.FC<SuccessViewProps> = ({ result, formData, onRe
         {/* Friendly Next Step Notice */}
         <div className="p-3 rounded-xl bg-blue-950/30 border border-blue-500/20 text-xs text-blue-200 mb-6 flex items-center gap-2.5 text-right">
           <MessageSquare className="w-4 h-4 text-brand-cyan shrink-0" />
-          <span>سيتم التواصل معك هاتفياً أو عبر رسائل الواتساب لتحديد موعد ومكان المقابلة الشخصية في الكلية.</span>
+          <span>سيتم التواصل معك عبر الواتساب لإضافتك إلى جروب الفريق الرسمي وبدء توزيع المهام والأنشطة مباشرة.</span>
         </div>
 
         {/* Actions */}

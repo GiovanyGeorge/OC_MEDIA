@@ -381,7 +381,7 @@ export const RecruitmentForm: React.FC<RecruitmentFormProps> = ({ onSuccess, onO
                     <User className="w-4 h-4 text-brand-cyan" />
                     <span>البيانات الشخصية</span>
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">أدخل بياناتك للتواصل معك بخصوص موعد المقابلة</p>
+                  <p className="text-xs text-slate-400 mt-0.5">أدخل بياناتك للتواصل معك وتأكيد انضمامك للفريق</p>
                 </div>
 
                 <div className="space-y-5">
@@ -739,7 +739,7 @@ export const RecruitmentForm: React.FC<RecruitmentFormProps> = ({ onSuccess, onO
                 <div className="pt-2 border-t border-slate-800 space-y-3">
                   <div className="p-3 rounded-xl bg-brand-navy/60 border border-slate-800 text-[11px] text-slate-400 leading-relaxed flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 text-brand-cyan shrink-0 mt-0.5" />
-                    <span>تُستخدم البيانات فقط لأغراض فرز ومقابلات لجنة الإعلام باتحاد الطلاب، ولا تُشارك مع أي طرف خارجي.</span>
+                    <span>تُستخدم البيانات لتنظيم وتوزيع مهام فريق الميديا باتحاد الطلاب، ولا تُشارك مع أي طرف خارجي.</span>
                   </div>
 
                   <div>
@@ -751,7 +751,7 @@ export const RecruitmentForm: React.FC<RecruitmentFormProps> = ({ onSuccess, onO
                         disabled={isSubmitting}
                         className="w-4 h-4 rounded border-slate-700 bg-brand-navy text-brand-blue focus:ring-0 cursor-pointer"
                       />
-                      <span className="text-xs text-slate-300">أقر بصحة البيانات وجاهزيتي للمقابلة الشخصية.</span>
+                      <span className="text-xs text-slate-300">أقر بصحة البيانات ورغبتي في الانضمام لفريق الميديا والبدء في الأنشطة.</span>
                     </label>
                     {errors.agreedToTerms && (
                       <p className="text-xs text-red-400 mt-1">{errors.agreedToTerms}</p>
