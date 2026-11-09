@@ -8,5 +8,17 @@ export default defineConfig({
     port: 3000,
     open: false,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          charts: ['recharts'],
+          xlsx: ['xlsx'],
+          motion: ['framer-motion', 'lucide-react'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
 });
-

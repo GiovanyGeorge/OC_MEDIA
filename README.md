@@ -1,29 +1,39 @@
-# OC Media Committee Recruitment Platform 2026
+# OC Student Union — Media Committee Recruitment & Analytics Platform 2026
 
-Modern, Arabic-first student recruitment web application for the **Media Committee of the Student Union, Faculty of Computers and Artificial Intelligence, Capital University**.
+Modern, Arabic-first student recruitment and administrative analytics dashboard for the **Media Committee of the Student Union, Faculty of Computers and Artificial Intelligence, Capital University**.
 
-The platform is directly integrated with **Google Sheets** (for real-time applicant data records) and **Google Drive** (for portfolio uploads) via a lightweight, secure **Google Apps Script Web App** backend—operating at **zero cost without Supabase, Firebase, or paid services**.
+The platform consists of two integrated components:
+1. **Public Recruitment Portal:** A sleek multi-step recruitment form connected directly to **Google Sheets** and **Google Drive** via **Google Apps Script Web App** (zero-cost, no Supabase/Firebase required).
+2. **Administrative Analytics Dashboard:** A private, browser-based administrative interface for uploading downloaded Google Sheets spreadsheets (.XLSX / .CSV), parsing records in-memory, visualizing committee statistics with Recharts, managing applicants, and exporting reports.
 
 ---
 
 ## 🌟 Key Features
 
-- **Arabic-First & RTL Design:** Built with native right-to-left layout (`dir="rtl"`), Arabic typography (Cairo & Tajawal), and university identity.
-- **Brand Identity:** Deep navy blue and vibrant cyan palette matching the official OC Student Union logo.
-- **Zero-Cost Backend:** Powered by Google Apps Script, storing submissions directly in Google Sheets and files in Google Drive.
-- **Client-Side Validation:**
-  - Three-part full name verification in Arabic.
-  - Egyptian phone number validation (11 digits: `010`, `011`, `012`, `015`).
-  - Academic year selection (First, Second, Third, Fourth).
-  - Media skills multi-selection with custom text option.
-  - Equipment multi-selection with custom text option.
-  - Optional portfolio file upload (PDF, JPG, JPEG, PNG up to 10MB) with drag-and-drop, live size check, and remove capability.
-- **Anti-Duplication:** Google Apps Script checks for existing phone numbers before recording a new submission.
-- **Submission Confirmation:** Generates a unique tracking reference code (`OC-MED-XXXX`), displays a confirmation receipt, provides one-click copy, printable view, and clear next-step interview timeline.
-- **Security & Privacy:**
-  - No national ID or sensitive documents collected.
-  - No secret credentials exposed in frontend client code.
-  - Google Drive files and Sheets remain restricted to committee administrators.
+### 1. Public Recruitment Portal
+- **Arabic-First Design:** Native RTL layout (`dir="rtl"`), Arabic typography (Cairo & Tajawal), and official OC Student Union visual identity.
+- **4-Step Guided Flow:** 
+  - Step 1: Personal Information (Three-part name, Egyptian active WhatsApp number, Academic Year).
+  - Step 2: Media Skills Selection (12 specialized domains).
+  - Step 3: Available Equipment & Gear (11 hardware categories).
+  - Step 4: Optional Portfolio Upload (PDF, JPG, PNG up to 10MB) or external link (Behance, Drive, Vimeo).
+- **Zero Mention of Interviews:** Immediate joining and team orientation flow.
+- **Instant Backend Verification:** Server-side validation, duplicate prevention by phone number, automatic row formatting, and direct Google Drive storage.
+
+### 2. Administrative Analytics Dashboard
+- **Local Browser In-Memory Processing:**
+  - Accepts `.xlsx`, `.xls`, and `.csv` files downloaded directly from Google Sheets.
+  - Parsed 100% locally in the browser with SheetJS (`xlsx`).
+  - No database required, no external API transmission, and no sensitive data saved to `localStorage`.
+- **Dashboard Sections:**
+  - **Overview:** Total applicants, portfolio attachment percentage, academic year distribution donut chart, top 5 requested skills bar chart, and application status breakdown.
+  - **Skills Analytics:** Detailed statistics and charts for all 12 media skill domains.
+  - **Equipment Analytics:** Detailed inventory of cameras, gimbals, mics, lights, and editing workstations.
+  - **Applicants Management Table:** Search by name/phone/ID, filter by academic year, skill, equipment, status, and portfolio presence. Multi-column sorting and pagination.
+  - **Applicant Profile Modal:** Comprehensive view of applicant information, registered skills, available equipment, and direct Google Drive portfolio link.
+  - **Reports & Export Center:** One-click UTF-8 CSV exports for filtered applicant records, complete analytics summary, skills distribution, and equipment inventory.
+- **Bilingual Interface:** Toggle between Arabic (RTL) and English (LTR) at any time.
+- **Sample Test Dataset Included:** Built-in fictional dataset marked with `[TEST]` for instant dashboard demonstration and testing.
 
 ---
 
@@ -31,11 +41,13 @@ The platform is directly integrated with **Google Sheets** (for real-time applic
 
 - **Frontend:** [React 18](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/)
 - **Styling:** [Tailwind CSS v3](https://tailwindcss.com/)
+- **Charts & Visualization:** [Recharts](https://recharts.org/)
+- **Spreadsheet Parsing:** [SheetJS (xlsx)](https://docs.sheetjs.com/)
+- **Animations:** [Framer Motion](https://www.framer.com/motion/)
 - **Icons:** [Lucide React](https://lucide.dev/)
-- **Effects:** [Canvas Confetti](https://www.npmjs.com/package/canvas-confetti)
-- **Backend:** [Google Apps Script](https://developers.google.com/apps-script)
+- **Backend:** [Google Apps Script Web App](https://developers.google.com/apps-script)
 - **Database:** [Google Sheets](https://www.google.com/sheets/about/)
-- **Storage:** [Google Drive](https://www.google.com/drive/)
+- **File Storage:** [Google Drive](https://www.google.com/drive/)
 
 ---
 
@@ -43,126 +55,104 @@ The platform is directly integrated with **Google Sheets** (for real-time applic
 
 ```text
 ├── google-apps-script/
-│   └── Code.gs                  # Full Google Apps Script backend source code
+│   └── Code.gs                         # Google Apps Script backend source code
 ├── public/
-│   └── logo.jpg                 # Official OC Student Union logo
+│   └── logo.jpg                        # Official OC Student Union logo
 ├── src/
 │   ├── components/
-│   │   ├── Header.tsx           # Hero section, identity badges, status pill
-│   │   ├── RecruitmentForm.tsx  # Multi-section recruitment form & validation
-│   │   ├── SuccessView.tsx      # Confirmation page, receipt & ID copy
-│   │   ├── SetupNoticeModal.tsx # Guided setup & backend ping test modal
-│   │   └── Footer.tsx           # University & union footer
+│   │   ├── Header.tsx                  # Public portal header with logo and status
+│   │   ├── RecruitmentForm.tsx         # 4-step recruitment form & validation
+│   │   ├── SuccessView.tsx             # Submission receipt & reference code
+│   │   ├── SetupNoticeModal.tsx        # Guided setup & backend ping modal
+│   │   └── Footer.tsx                  # Public portal footer
+│   ├── dashboard/
+│   │   ├── components/
+│   │   │   ├── DashboardLayout.tsx     # Admin sidebar, header, language switcher
+│   │   │   ├── FileUploadZone.tsx      # Excel/CSV drag-and-drop parser
+│   │   │   ├── OverviewPage.tsx        # KPIs and primary charts (Recharts)
+│   │   │   ├── SkillsPage.tsx          # Comprehensive 12-skill analytics
+│   │   │   ├── EquipmentPage.tsx       # 11-category equipment analysis
+│   │   │   ├── ApplicantsTablePage.tsx # Filterable, searchable data table
+│   │   │   ├── ApplicantDetailModal.tsx# Profile card & portfolio link
+│   │   │   └── ReportsPage.tsx         # CSV export generator
+│   │   ├── types/
+│   │   │   └── dashboard.ts            # Dashboard interfaces & data structures
+│   │   ├── utils/
+│   │   │   ├── excelParser.ts          # Local XLSX/CSV column auto-detection
+│   │   │   ├── analytics.ts            # Aggregate metric calculator
+│   │   │   ├── sampleDataGenerator.ts  # Fictional test dataset generator
+│   │   │   └── exportUtils.ts          # UTF-8 BOM CSV exporter
+│   │   └── DashboardApp.tsx            # Main dashboard controller
 │   ├── constants/
-│   │   └── options.ts           # Academic years, skills & equipment options
+│   │   └── options.ts                  # Academic years, skills, and equipment
 │   ├── services/
-│   │   └── api.ts               # Google Apps Script communication & base64 encoding
+│   │   └── api.ts                      # Google Apps Script HTTP client & base64
 │   ├── types/
-│   │   └── recruitment.ts       # TypeScript interfaces & types
-│   ├── App.tsx                  # Main application state & view management
-│   ├── index.css                # Tailwind directives & custom animations
-│   ├── main.tsx                 # React entry point
-│   └── vite-env.d.ts            # Vite environment definitions
-├── .env.example                 # Example environment variables
-├── package.json                 # Project dependencies & scripts
-├── tailwind.config.js           # Custom university navy/cyan color theme
-├── vite.config.ts               # Vite configuration
-├── SETUP_GUIDE_AR.md            # Detailed Arabic setup manual
-└── README.md                    # English documentation
+│   │   └── recruitment.ts              # Form types & payload schemas
+│   ├── App.tsx                         # View controller (Form vs Dashboard)
+│   ├── index.css                       # Tailwind custom directives & typography
+│   └── main.tsx                        # Application entry point
+├── .env.example                        # Example environment variables
+├── package.json                        # Dependencies and build scripts
+├── vite.config.ts                      # Vite configuration with chunk splitting
+├── SETUP_GUIDE_AR.md                   # Step-by-step Arabic deployment guide
+└── README.md                           # Documentation
 ```
 
 ---
 
-## 🚀 Setup & Deployment Guide
+## 🚀 How to Run Locally
 
-### 1. Google Sheets Setup
-1. Open [Google Sheets](https://sheets.new) while logged into your committee's Google account.
-2. Title the spreadsheet `OC_Media_Recruitment_Applications_2026`.
-3. The script will automatically format and initialize the following header row upon first submission:
-   1. `Submission ID`
-   2. `Submission Date`
-   3. `Full Name`
-   4. `Phone Number`
-   5. `Academic Year`
-   6. `Media Skills`
-   7. `Equipment`
-   8. `Portfolio URL`
-   9. `Status`
-
-### 2. Google Apps Script Setup
-1. Inside the spreadsheet, click **Extensions** > **Apps Script**.
-2. Replace all code in `Code.gs` with the contents of [`google-apps-script/Code.gs`](./google-apps-script/Code.gs).
-3. Save the project (`Ctrl + S`).
-
-### 3. Deploying the Web App
-1. Click **Deploy** > **New deployment**.
-2. Click the gear icon next to "Select type" and choose **Web app**.
-3. Configure the deployment settings:
-   - **Description:** `OC Media Recruitment Web API`
-   - **Execute as:** `Me (your Google account)`
-   - **Who has access:** `Anyone` *(required for applicants to submit without requiring individual Google Sheet edit permissions)*.
-4. Click **Deploy**.
-5. Grant required permissions when prompted (**Authorize access** > **Advanced** > **Go to project (unsafe)** > **Allow**).
-6. Copy the generated **Web app URL** (ending with `/exec`).
-
-### 4. Google Drive Integration
-- The script automatically checks for a dedicated folder named `OC_Media_Recruitment_Portfolios_2026` in Google Drive (creating it automatically if it does not exist).
-- Files are saved as `[SubmissionID]_[ApplicantName].[extension]` and shared with view permissions for committee reviewers.
-
-### 5. Frontend Configuration & Local Development
-1. Clone this repository or navigate to the project directory:
+1. Install dependencies:
    ```bash
-   cd e:/OC_Media_2026
+   npm install
    ```
-2. Copy `.env.example` to `.env`:
+
+2. Configure environment:
    ```bash
    cp .env.example .env
    ```
-3. Open `.env` and set your Web App URL:
+   Add your Google Apps Script URL in `.env`:
    ```env
-   VITE_GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/AKfycb.../exec
+   VITE_GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
    ```
-4. Start the development server:
+
+3. Start development server:
    ```bash
    npm run dev
    ```
-5. Build for production:
+
+4. Build for production:
    ```bash
    npm run build
    ```
 
 ---
 
-## 🌐 Hosting Instructions
+## 📊 How to Access the Analytics Dashboard
 
-### Vercel (Recommended)
-1. Push this project to GitHub.
-2. Go to [Vercel](https://vercel.com) and import the repository.
-3. In **Environment Variables**, add:
-   - Name: `VITE_GOOGLE_APPS_SCRIPT_URL`
-   - Value: `https://script.google.com/macros/s/YOUR_ID/exec`
-4. Click **Deploy**.
-
-### Netlify
-1. Connect your repository on [Netlify](https://netlify.com).
-2. Set build command to `npm run build` and publish directory to `dist`.
-3. Add the `VITE_GOOGLE_APPS_SCRIPT_URL` environment variable.
-4. Deploy the site.
+1. **Via Browser URL:** Navigate to `/#/dashboard` or `/#/admin` (e.g. `http://localhost:3000/#/dashboard`).
+2. **Via Public Page Shortcut:** Click the **"لوحة التحليلات (Admin)"** pill button at the bottom-left of the recruitment portal.
+3. **Using Real Data:**
+   - Go to your Google Sheet containing applicant responses.
+   - Click **File** > **Download** > **Microsoft Excel (.xlsx)** or **CSV**.
+   - Drop the file into the dashboard to analyze your applicant records.
+4. **Using Test Data:**
+   - Click **"معاينة لوحة التحكم ببيانات تجريبية (Demo)"** to explore all features instantly with fictional test records.
 
 ---
 
 ## 🔒 Security & Privacy
 
-- **No National IDs:** In compliance with privacy guidelines, national identification numbers are strictly excluded.
-- **Isolated Credentials:** Client code carries no secret tokens; all Google Drive / Sheets operations occur strictly server-side within the Apps Script container.
-- **Anti-Duplication:** Multiple submissions from the same phone number are blocked to prevent duplicate entries.
-- **Privacy Notice:** Clear Arabic disclosure is presented to every applicant explaining data retention and review criteria.
+- **Zero External Telemetry:** All spreadsheet parsing and aggregation is performed inside client browser memory using SheetJS.
+- **No National IDs:** In strict compliance with university privacy policies, national IDs are never collected or stored.
+- **No Insecure Storage:** Applicant records are not persisted in `localStorage` or `cookies`.
+- **Anti-Duplication:** Handled server-side in Google Apps Script via telephone number verification.
 
 ---
 
-## 🏛️ Organization Credits
+## 🏛️ Credits
 
 - **Faculty of Computers and Artificial Intelligence, Capital University**
 - **OC Student Union — Media Committee (لجنة الإعلام والتوثيق)**
 - Academic Year: **2025 / 2026**
-
