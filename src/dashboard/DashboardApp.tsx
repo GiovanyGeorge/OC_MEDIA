@@ -9,12 +9,14 @@ import { EquipmentPage } from './components/EquipmentPage';
 import { ApplicantsTablePage } from './components/ApplicantsTablePage';
 import { ReportsPage } from './components/ReportsPage';
 import { ApplicantDetailModal } from './components/ApplicantDetailModal';
+import { AdminGate } from './components/AdminGate';
 
 interface DashboardAppProps {
   onBackToRecruitment: () => void;
 }
 
 export const DashboardApp: React.FC<DashboardAppProps> = ({ onBackToRecruitment }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   
@@ -35,9 +37,26 @@ export const DashboardApp: React.FC<DashboardAppProps> = ({ onBackToRecruitment 
     setActiveTab('overview');
   };
 
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setApplicants([]);
+    setFileName(null);
+  };
+
   const summary = useMemo(() => {
     return computeDashboardSummary(applicants);
   }, [applicants]);
+
+  // If not authenticated, show the secure Admin Gate
+  if (!isAuthenticated) {
+    return (
+      <AdminGate
+        onAuthenticated={() => setIsAuthenticated(true)}
+        onBackToRecruitment={onBackToRecruitment}
+        lang={lang}
+      />
+    );
+  }
 
   return (
     <DashboardLayout
@@ -47,6 +66,7 @@ export const DashboardApp: React.FC<DashboardAppProps> = ({ onBackToRecruitment 
       applicantCount={applicants.length}
       onUploadNewFile={() => setShowUploaderModal(true)}
       onBackToRecruitment={onBackToRecruitment}
+      onLockSession={handleLogout}
       lang={lang}
       onToggleLang={() => setLang(l => (l === 'ar' ? 'en' : 'ar'))}
     >

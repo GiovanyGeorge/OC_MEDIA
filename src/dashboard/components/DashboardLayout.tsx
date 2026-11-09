@@ -10,7 +10,8 @@ import {
   ArrowRight, 
   Menu, 
   X, 
-  FileSpreadsheet
+  FileSpreadsheet,
+  LogOut
 } from 'lucide-react';
 import { DashboardTab } from '../types/dashboard';
 
@@ -21,6 +22,7 @@ interface DashboardLayoutProps {
   applicantCount: number;
   onUploadNewFile: () => void;
   onBackToRecruitment: () => void;
+  onLockSession?: () => void;
   lang: 'ar' | 'en';
   onToggleLang: () => void;
   children: React.ReactNode;
@@ -33,6 +35,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   applicantCount,
   onUploadNewFile,
   onBackToRecruitment,
+  onLockSession,
   lang,
   onToggleLang,
   children
@@ -124,6 +127,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               <span>{isAr ? 'استمارة التقديم' : 'Recruitment Form'}</span>
               <ArrowRight className={`w-3.5 h-3.5 ${isAr ? 'rotate-180' : ''}`} />
             </button>
+
+            {/* Lock / Logout session */}
+            {onLockSession && (
+              <button
+                type="button"
+                onClick={onLockSession}
+                className="p-2 rounded-xl bg-red-950/40 hover:bg-red-900/40 border border-red-500/30 text-red-300 hover:text-white transition"
+                title={isAr ? 'قفل لوحة التحليلات وتسجيل الخروج' : 'Lock Session & Logout'}
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </header>
