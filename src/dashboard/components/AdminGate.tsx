@@ -121,3 +121,4 @@ export const AdminGate: React.FC<AdminGateProps> = ({ onAuthenticated, onBackToR
     </div>
   );
 };
+
