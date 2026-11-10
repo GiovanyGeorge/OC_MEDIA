@@ -296,7 +296,7 @@ export const RecruitmentForm: React.FC<RecruitmentFormProps> = ({ onSuccess, onO
           انضم إلى فريق الميديا والتوثيق
         </h1>
         <p className="text-slate-400 text-xs sm:text-sm mt-1.5 max-w-md mx-auto">
-          شارك في تغطية الفعاليات الكبرى وصناعة المحتوى البصري للاتحاد
+          شارك في تغطية الفعاليات الكبرى وصناعة المحتوى البصري للكلية
         </p>
       </div>
 
@@ -739,7 +739,7 @@ export const RecruitmentForm: React.FC<RecruitmentFormProps> = ({ onSuccess, onO
                 <div className="pt-2 border-t border-slate-800 space-y-3">
                   <div className="p-3 rounded-xl bg-brand-navy/60 border border-slate-800 text-[11px] text-slate-400 leading-relaxed flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 text-brand-cyan shrink-0 mt-0.5" />
-                    <span>تُستخدم البيانات لتنظيم وتوزيع مهام فريق الميديا باتحاد الطلاب، ولا تُشارك مع أي طرف خارجي.</span>
+                    <span>تُستخدم البيانات لتنظيم وتوزيع مهام فريق الميديا بالكلية، ولا تُشارك مع أي طرف خارجي.</span>
                   </div>
 
                   <div>

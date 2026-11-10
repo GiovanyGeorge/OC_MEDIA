@@ -65,7 +65,7 @@ export const SuccessView: React.FC<SuccessViewProps> = ({ result, formData, onRe
           تم استلام استمارتك بنجاح
         </h2>
         <p className="text-slate-400 text-xs sm:text-sm max-w-md mx-auto mb-6">
-          شكراً لتقديمك في لجنة الإعلام باتحاد طلاب كلية الحاسبات والذكاء الاصطناعي — جامعة العاصمة
+          شكراً لتقديمك في لجنة الإعلام بكلية الحاسبات والذكاء الاصطناعي — جامعة العاصمة
         </p>
 
         {/* Submission ID Card */}

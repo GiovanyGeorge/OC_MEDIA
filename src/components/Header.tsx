@@ -15,9 +15,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSetupModal }) => {
         {/* Brand / Logo */}
         <div className="flex items-center gap-3.5">
           <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-brand-navy border border-slate-700/80 p-0.5 shadow-sm overflow-hidden flex items-center justify-center">
-            <img 
-              src="/logo.jpg" 
-              alt="شعار اتحاد الطلاب" 
+            <img
+              src="/logo.jpg"
+              alt="شعار الكلية"
               className="w-full h-full object-cover rounded-lg"
             />
           </div>
@@ -26,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSetupModal }) => {
               <span className="text-base sm:text-lg font-bold text-white tracking-wide">لجنة الإعلام</span>
               <span className="text-xs px-2 py-0.5 rounded-md bg-blue-500/10 text-brand-cyan border border-brand-cyan/20 font-medium">OC Media</span>
             </div>
-            <p className="text-[11px] sm:text-xs text-slate-400">اتحاد طلاب حاسبات والذكاء الاصطناعي — جامعة العاصمة</p>
+            <p className="text-[11px] sm:text-xs text-slate-400">كلية الحاسبات والذكاء الاصطناعي — جامعة العاصمة</p>
           </div>
         </div>
 
