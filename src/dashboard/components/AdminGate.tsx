@@ -46,7 +46,7 @@ export const AdminGate: React.FC<AdminGateProps> = ({ onAuthenticated, onBackToR
           </div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-brand-cyan border border-brand-cyan/20 text-xs font-semibold mb-2">
             <Lock className="w-3.5 h-3.5" />
-            <span>{isAr ? 'منطقة مسؤولي الاتحاد فقط' : 'Authorized Personnel Only'}</span>
+            <span>{isAr ? 'منطقة مسؤولي الكلية فقط' : 'Authorized Personnel Only'}</span>
           </div>
           <h2 className="text-xl font-bold text-white">
             {isAr ? 'لوحة تحليلات لجنة الإعلام' : 'Media Analytics Portal'}

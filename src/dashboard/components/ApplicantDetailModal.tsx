@@ -10,9 +10,11 @@ import {
   Layers, 
   MessageCircle,
   Copy,
-  Check
+  Check,
+  Send
 } from 'lucide-react';
 import { ApplicantRecord } from '../types/dashboard';
+import { generateWelcomeMessage, openWhatsAppChat } from '../utils/whatsapp';
 
 interface ApplicantDetailModalProps {
   applicant: ApplicantRecord | null;
@@ -110,6 +112,19 @@ export const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ appl
             </span>
           </div>
         </div>
+
+        {/* WhatsApp Group Invite Action Button */}
+        <button
+          type="button"
+          onClick={() => {
+            const msg = generateWelcomeMessage(applicant.fullName);
+            openWhatsAppChat(applicant.phoneNumber, msg);
+          }}
+          className="w-full mb-6 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm shadow-emerald-600/30"
+        >
+          <Send className="w-3.5 h-3.5 -scale-x-100" />
+          <span>{isAr ? 'إرسال رابط الجروب الترحيبي عبر واتساب' : 'Send Welcome Message & Group Link via WhatsApp'}</span>
+        </button>
 
         {/* Media Skills */}
         <div className="mb-6">

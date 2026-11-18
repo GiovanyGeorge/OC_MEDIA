@@ -7,10 +7,13 @@ import {
   RotateCcw, 
   ArrowUpDown, 
   Eye, 
-  FileCheck
+  FileCheck,
+  MessageSquare
 } from 'lucide-react';
 import { ApplicantRecord, FilterState } from '../types/dashboard';
 import { MEDIA_SKILLS, EQUIPMENT_OPTIONS, ACADEMIC_YEARS } from '../../constants/options';
+import { WhatsAppBroadcastModal } from './WhatsAppBroadcastModal';
+import { generateWelcomeMessage, openWhatsAppChat } from '../utils/whatsapp';
 
 interface ApplicantsTablePageProps {
   applicants: ApplicantRecord[];
@@ -20,6 +23,9 @@ interface ApplicantsTablePageProps {
 
 export const ApplicantsTablePage: React.FC<ApplicantsTablePageProps> = ({ applicants, onSelectApplicant, lang }) => {
   const isAr = lang === 'ar';
+
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const [quickSentIds, setQuickSentIds] = useState<Set<string>>(new Set());
 
   const [filters, setFilters] = useState<FilterState>({
     searchQuery: '',
@@ -156,7 +162,17 @@ export const ApplicantsTablePage: React.FC<ApplicantsTablePageProps> = ({ applic
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">
+            <button
+              type="button"
+              onClick={() => setIsBroadcastModalOpen(true)}
+              className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-sm shadow-emerald-600/30 shrink-0"
+              title={isAr ? 'فتح حملة إرسال رسائل الواتساب ورابط الجروب' : 'Open WhatsApp Outreach Hub'}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>{isAr ? 'إرسال رابط الجروب للطلاب' : 'Send Group Link'}</span>
+            </button>
+
+            <span className="text-xs text-slate-400 hidden md:inline">
               {sortedApplicants.length} {isAr ? 'متقدم مطابق' : 'matching applicants'}
             </span>
             <button
@@ -326,13 +342,32 @@ export const ApplicantsTablePage: React.FC<ApplicantsTablePageProps> = ({ applic
                       </span>
                     </td>
                     <td className="p-3.5 text-center">
-                      <button
-                        type="button"
-                        className="p-1.5 rounded-lg bg-brand-navy hover:bg-slate-700 text-slate-300 hover:text-white transition"
-                        title={isAr ? 'عرض التفاصيل' : 'View Details'}
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const msg = generateWelcomeMessage(applicant.fullName);
+                            openWhatsAppChat(applicant.phoneNumber, msg);
+                            setQuickSentIds(prev => new Set(prev).add(applicant.id));
+                          }}
+                          className={`p-1.5 rounded-lg border transition ${
+                            quickSentIds.has(applicant.id)
+                              ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-400'
+                              : 'bg-emerald-600/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-600 hover:text-white'
+                          }`}
+                          title={isAr ? 'إرسال رسالة الترحيب ورابط الجروب عبر واتساب' : 'Send welcome message & group link via WhatsApp'}
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onSelectApplicant(applicant)}
+                          className="p-1.5 rounded-lg bg-brand-navy hover:bg-slate-700 text-slate-300 hover:text-white transition"
+                          title={isAr ? 'عرض التفاصيل' : 'View Details'}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -389,6 +424,14 @@ export const ApplicantsTablePage: React.FC<ApplicantsTablePageProps> = ({ applic
           </div>
         </div>
       </div>
+
+      {/* Broadcast WhatsApp Modal */}
+      <WhatsAppBroadcastModal
+        applicants={sortedApplicants}
+        isOpen={isBroadcastModalOpen}
+        onClose={() => setIsBroadcastModalOpen(false)}
+        lang={lang}
+      />
     </div>
   );
 };

@@ -65,7 +65,7 @@ export const SetupNoticeModal: React.FC<SetupNoticeModalProps> = ({ isOpen, onCl
           </div>
           <div>
             <h3 className="text-xl font-bold text-white">إعداد ربط Google Sheets و Google Drive</h3>
-            <p className="text-xs text-slate-400">دليل ربط استمارة لجنة الإعلام بحساب جوجل الخاص بالاتحاد</p>
+            <p className="text-xs text-slate-400">دليل ربط استمارة لجنة الإعلام بحساب جوجل الخاص بالكلية</p>
           </div>
         </div>
 

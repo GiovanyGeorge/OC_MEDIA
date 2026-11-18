@@ -77,7 +77,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                   Admin Analytics
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">اتحاد طلاب حاسبات والذكاء الاصطناعي — جامعة العاصمة</p>
+              <p className="text-[11px] text-slate-400">كلية الحاسبات والذكاء الاصطناعي — جامعة العاصمة</p>
             </div>
           </div>
 
@@ -215,7 +215,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       {/* Admin Footer */}
       <footer className="border-t border-slate-800/80 bg-brand-darkest text-slate-500 py-4 text-xs text-center">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>اتحاد طلاب كلية الحاسبات والذكاء الاصطناعي — جامعة العاصمة • OC Media Analytics</p>
+          <p>كلية الحاسبات والذكاء الاصطناعي — جامعة العاصمة • OC Media Analytics</p>
           <p className="text-[11px] text-slate-600">Local Browser In-Memory Processing</p>
         </div>
       </footer>

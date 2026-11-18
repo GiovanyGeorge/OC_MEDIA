@@ -1,5 +1,5 @@
 /**
- * OC Student Union - Media Committee Recruitment Backend
+ * OC Media - Media Committee Recruitment Backend
  * Faculty of Computers and Artificial Intelligence, Capital University
  * 
  * Google Apps Script Web App
@@ -56,7 +56,7 @@ function doGet(e) {
     return createJsonResponse({
       success: true,
       status: "ONLINE",
-      committee: "Media Committee - OC Student Union",
+      committee: "Media Committee - Faculty of Computers and AI",
       faculty: "Faculty of Computers and Artificial Intelligence, Capital University",
       timestamp: new Date().toISOString()
     });
@@ -258,7 +258,7 @@ function doPost(e) {
       fullName: fullName,
       phone: cleanPhone,
       portfolioUrl: finalPortfolioUrl,
-      message: "تم استلام طلبك بنجاح في لجنة الإعلام باتحاد طلاب كلية الحاسبات والذكاء الاصطناعي."
+      message: "تم استلام طلبك بنجاح في لجنة الإعلام بكلية الحاسبات والذكاء الاصطناعي."
     });
 
   } catch (globalError) {

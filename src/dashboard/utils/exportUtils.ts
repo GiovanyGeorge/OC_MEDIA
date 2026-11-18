@@ -64,7 +64,7 @@ export function exportApplicantsToCsv(applicants: ApplicantRecord[], fileName = 
  */
 export function exportAnalyticsSummaryCsv(summary: DashboardSummary, fileName = 'OC_Media_Analytics_Summary.csv'): void {
   const lines: string[] = [
-    'تقرير تحليلات لجنة الإعلام - اتحاد طلاب حاسبات والذكاء الاصطناعي',
+    'تقرير تحليلات لجنة الإعلام - كلية الحاسبات والذكاء الاصطناعي',
     `تاريخ استخراج التقرير,${new Date().toLocaleString('ar-EG')}`,
     '',
     'المؤشرات العامة (KPIs)',
