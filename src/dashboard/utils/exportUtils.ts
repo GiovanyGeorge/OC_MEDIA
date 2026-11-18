@@ -39,7 +39,13 @@ export function exportApplicantsToCsv(applicants: ApplicantRecord[], fileName = 
     'Equipment',
     'Portfolio URL',
     'Has Portfolio',
-    'Status'
+    'Original Status',
+    'Evaluation Status',
+    'Skill Rating',
+    'Portfolio Rating',
+    'Shortlisted',
+    'Reviewed',
+    'Internal Notes'
   ];
 
   const rows = applicants.map(a => [
@@ -52,7 +58,13 @@ export function exportApplicantsToCsv(applicants: ApplicantRecord[], fileName = 
     escapeCsvCell(a.equipment.join('، ')),
     escapeCsvCell(a.portfolioUrl),
     escapeCsvCell(a.hasPortfolio ? 'نعم' : 'لا'),
-    escapeCsvCell(a.status)
+    escapeCsvCell(a.status),
+    escapeCsvCell(a.evaluation?.statusOverride || a.status),
+    escapeCsvCell(a.evaluation?.skillRating ? `${a.evaluation.skillRating}/5` : '-'),
+    escapeCsvCell(a.evaluation?.portfolioRating ? `${a.evaluation.portfolioRating}/5` : '-'),
+    escapeCsvCell(a.evaluation?.isShortlisted ? 'نعم (Shortlisted)' : 'لا'),
+    escapeCsvCell(a.evaluation?.isReviewed ? 'نعم' : 'لا'),
+    escapeCsvCell(a.evaluation?.notes || '')
   ]);
 
   const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -60,17 +72,48 @@ export function exportApplicantsToCsv(applicants: ApplicantRecord[], fileName = 
 }
 
 /**
+ * Export shortlisted applicants only as CSV
+ */
+export function exportShortlistedApplicantsCsv(applicants: ApplicantRecord[]): void {
+  const shortlisted = applicants.filter(a => {
+    const status = (a.evaluation?.statusOverride || a.status || '').toLowerCase();
+    return a.evaluation?.isShortlisted || status.includes('shortlist') || status.includes('ترشيح');
+  });
+
+  exportApplicantsToCsv(shortlisted, `OC_Media_Shortlisted_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+/**
+ * Export accepted applicants only as CSV
+ */
+export function exportAcceptedApplicantsCsv(applicants: ApplicantRecord[]): void {
+  const accepted = applicants.filter(a => {
+    const status = (a.evaluation?.statusOverride || a.status || '').toLowerCase();
+    return status.includes('accept') || status.includes('مقبول');
+  });
+
+  exportApplicantsToCsv(accepted, `OC_Media_Accepted_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+/**
  * Export analytics summary report as CSV
  */
 export function exportAnalyticsSummaryCsv(summary: DashboardSummary, fileName = 'OC_Media_Analytics_Summary.csv'): void {
   const lines: string[] = [
-    'تقرير تحليلات لجنة الإعلام - كلية الحاسبات والذكاء الاصطناعي',
+    'تقرير تحليلات لجنة الإعلام - كلية الحاسبات والذكاء الاصطناعي - جامعة العاصمة',
     `تاريخ استخراج التقرير,${new Date().toLocaleString('ar-EG')}`,
     '',
     'المؤشرات العامة (KPIs)',
     `إجمالي المتقدمين,${summary.totalApplicants}`,
+    `قيد المراجعة,${summary.pendingCount}`,
+    `المقبولين,${summary.acceptedCount}`,
+    `المرفوضين,${summary.rejectedCount}`,
+    `المرشحين للقائمة المختصرة (Shortlisted),${summary.shortlistedCount}`,
+    `تمت مراجعتهم,${summary.reviewedCount}`,
+    `بانتظار المراجعة,${summary.unreviewedCount}`,
     `المتقدمين ببورتفوليو,${summary.applicantsWithPortfolio} (${summary.portfolioPercentage}%)`,
     `المتقدمين بدون بورتفوليو,${summary.applicantsWithoutPortfolio}`,
+    `ملاك معدات متعددة (أكثر من معدة),${summary.multipleEquipmentCount} (${summary.multipleEquipmentPercentage}%)`,
     '',
     'توزيع الفرق الدراسية',
     'الفرقة,العدد,النسبة المئوية'
@@ -136,3 +179,9 @@ export function exportEquipmentDistributionCsv(summary: DashboardSummary, fileNa
   downloadCsv(csv, fileName);
 }
 
+/**
+ * Triggers a print preview of the current view
+ */
+export function triggerPrintReport(): void {
+  window.print();
+}

@@ -1,4 +1,12 @@
-import { ApplicantRecord, DashboardSummary, SkillStat, EquipmentStat, AcademicYearStat, StatusStat } from '../types/dashboard';
+import { 
+  ApplicantRecord, 
+  DashboardSummary, 
+  SkillStat, 
+  EquipmentStat, 
+  AcademicYearStat, 
+  StatusStat,
+  SkillByYearStat
+} from '../types/dashboard';
 import { MEDIA_SKILLS, EQUIPMENT_OPTIONS, ACADEMIC_YEARS } from '../../constants/options';
 
 export function computeDashboardSummary(applicants: ApplicantRecord[]): DashboardSummary {
@@ -7,14 +15,23 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
   if (total === 0) {
     return {
       totalApplicants: 0,
+      pendingCount: 0,
+      acceptedCount: 0,
+      rejectedCount: 0,
+      shortlistedCount: 0,
+      reviewedCount: 0,
+      unreviewedCount: 0,
       applicantsWithPortfolio: 0,
       portfolioPercentage: 0,
       applicantsWithoutPortfolio: 0,
+      multipleEquipmentCount: 0,
+      multipleEquipmentPercentage: 0,
       academicYearStats: [],
       topSkills: [],
       allSkillsStats: [],
       topEquipment: [],
       allEquipmentStats: [],
+      skillByYearMatrix: [],
       statusStats: [],
       uniqueSkillsCount: 0,
       uniqueEquipmentCount: 0,
@@ -24,7 +41,7 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
 
   // 1. Portfolio stats
   const withPortfolio = applicants.filter(a => a.hasPortfolio).length;
-  const portfolioPercentage = total > 0 ? Math.round((withPortfolio / total) * 100) : 0;
+  const portfolioPercentage = Math.round((withPortfolio / total) * 100);
 
   // 2. Academic Year stats
   const yearCounts: { [k: string]: number } = {
@@ -46,7 +63,7 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
       labelAr: y.labelAr,
       labelEn: y.labelEn,
       count,
-      percentage: total > 0 ? Math.round((count / total) * 100) : 0
+      percentage: Math.round((count / total) * 100)
     };
   });
 
@@ -60,12 +77,12 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
     });
   }
 
-  // 3. Media Skills stats
+  // 3. Media Skills stats & Cross-Analysis with Academic Years
   const skillsCountMap = new Map<string, number>();
+  const skillYearMap = new Map<string, { first: number; second: number; third: number; fourth: number; other: number }>();
 
   applicants.forEach(a => {
     a.mediaSkills.forEach(s => {
-      // Find canonical match or keep as-is
       const matched = MEDIA_SKILLS.find(m => 
         s.toLowerCase().includes(m.id.toLowerCase()) || 
         s.includes(m.labelAr) ||
@@ -73,6 +90,16 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
       );
       const key = matched ? matched.id : s;
       skillsCountMap.set(key, (skillsCountMap.get(key) || 0) + 1);
+
+      if (!skillYearMap.has(key)) {
+        skillYearMap.set(key, { first: 0, second: 0, third: 0, fourth: 0, other: 0 });
+      }
+      const ym = skillYearMap.get(key)!;
+      if (a.academicYearNormalized === 'First') ym.first++;
+      else if (a.academicYearNormalized === 'Second') ym.second++;
+      else if (a.academicYearNormalized === 'Third') ym.third++;
+      else if (a.academicYearNormalized === 'Fourth') ym.fourth++;
+      else ym.other++;
     });
   });
 
@@ -83,16 +110,36 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
       labelAr: m.labelAr,
       labelEn: m.labelEn,
       count,
-      percentage: total > 0 ? Math.round((count / total) * 100) : 0
+      percentage: Math.round((count / total) * 100)
     };
   }).sort((a, b) => b.count - a.count);
 
   const topSkills = allSkillsStats.slice(0, 5);
 
-  // 4. Equipment stats
+  const skillByYearMatrix: SkillByYearStat[] = MEDIA_SKILLS.map(m => {
+    const ym = skillYearMap.get(m.id) || { first: 0, second: 0, third: 0, fourth: 0, other: 0 };
+    const skillTotal = skillsCountMap.get(m.id) || 0;
+    return {
+      skill: m.id,
+      labelAr: m.labelAr,
+      labelEn: m.labelEn,
+      firstYear: ym.first,
+      secondYear: ym.second,
+      thirdYear: ym.third,
+      fourthYear: ym.fourth,
+      otherYear: ym.other,
+      total: skillTotal
+    };
+  }).filter(s => s.total > 0).sort((a, b) => b.total - a.total);
+
+  // 4. Equipment stats & Multiple Gear ownership
   const equipCountMap = new Map<string, number>();
+  let multipleEquipmentCount = 0;
 
   applicants.forEach(a => {
+    if (a.equipment.length >= 2) {
+      multipleEquipmentCount++;
+    }
     a.equipment.forEach(eq => {
       const matched = EQUIPMENT_OPTIONS.find(e => 
         eq.toLowerCase().includes(e.id.toLowerCase()) || 
@@ -104,6 +151,8 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
     });
   });
 
+  const multipleEquipmentPercentage = Math.round((multipleEquipmentCount / total) * 100);
+
   const allEquipmentStats: EquipmentStat[] = EQUIPMENT_OPTIONS.map(e => {
     const count = equipCountMap.get(e.id) || 0;
     return {
@@ -111,17 +160,39 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
       labelAr: e.labelAr,
       labelEn: e.labelEn,
       count,
-      percentage: total > 0 ? Math.round((count / total) * 100) : 0
+      percentage: Math.round((count / total) * 100)
     };
   }).sort((a, b) => b.count - a.count);
 
   const topEquipment = allEquipmentStats.slice(0, 5);
 
-  // 5. Status stats
+  // 5. Status stats & Evaluation Breakdown
+  let pendingCount = 0;
+  let acceptedCount = 0;
+  let rejectedCount = 0;
+  let shortlistedCount = 0;
+  let reviewedCount = 0;
+
   const statusMap = new Map<string, number>();
+
   applicants.forEach(a => {
-    const s = a.status || 'قيد المراجعة';
-    statusMap.set(s, (statusMap.get(s) || 0) + 1);
+    const effectiveStatus = a.evaluation?.statusOverride || a.status || 'قيد المراجعة';
+    statusMap.set(effectiveStatus, (statusMap.get(effectiveStatus) || 0) + 1);
+
+    const norm = effectiveStatus.toLowerCase();
+    if (norm.includes('accept') || norm.includes('مقبول')) {
+      acceptedCount++;
+    } else if (norm.includes('reject') || norm.includes('مرفوض')) {
+      rejectedCount++;
+    } else if (norm.includes('shortlist') || norm.includes('ترشيح') || a.evaluation?.isShortlisted) {
+      shortlistedCount++;
+    } else {
+      pendingCount++;
+    }
+
+    if (a.evaluation?.isReviewed) {
+      reviewedCount++;
+    }
   });
 
   const statusStats: StatusStat[] = Array.from(statusMap.entries()).map(([status, count]) => ({
@@ -141,14 +212,23 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
 
   return {
     totalApplicants: total,
+    pendingCount,
+    acceptedCount,
+    rejectedCount,
+    shortlistedCount,
+    reviewedCount,
+    unreviewedCount: total - reviewedCount,
     applicantsWithPortfolio: withPortfolio,
     portfolioPercentage,
     applicantsWithoutPortfolio: total - withPortfolio,
+    multipleEquipmentCount,
+    multipleEquipmentPercentage,
     academicYearStats,
     topSkills,
     allSkillsStats,
     topEquipment,
     allEquipmentStats,
+    skillByYearMatrix,
     statusStats,
     uniqueSkillsCount: skillsCountMap.size,
     uniqueEquipmentCount: equipCountMap.size,
@@ -158,4 +238,3 @@ export function computeDashboardSummary(applicants: ApplicantRecord[]): Dashboar
     }
   };
 }
-

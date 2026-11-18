@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { ApplicantRecord, DashboardTab } from './types/dashboard';
+import React, { useState, useMemo, useEffect } from 'react';
+import { ApplicantRecord, DashboardTab, ApplicantEvaluation } from './types/dashboard';
 import { computeDashboardSummary } from './utils/analytics';
 import { DashboardLayout } from './components/DashboardLayout';
 import { FileUploadZone } from './components/FileUploadZone';
@@ -10,6 +10,10 @@ import { ApplicantsTablePage } from './components/ApplicantsTablePage';
 import { ReportsPage } from './components/ReportsPage';
 import { ApplicantDetailModal } from './components/ApplicantDetailModal';
 import { AdminGate } from './components/AdminGate';
+import { 
+  loadEvaluationsFromStorage, 
+  saveEvaluationToStorage 
+} from './utils/evaluationStorage';
 
 interface DashboardAppProps {
   onBackToRecruitment: () => void;
@@ -20,26 +24,73 @@ export const DashboardApp: React.FC<DashboardAppProps> = ({ onBackToRecruitment 
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   
-  // Data state
-  const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
+  // Raw uploaded data state
+  const [rawApplicants, setRawApplicants] = useState<ApplicantRecord[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [showUploaderModal, setShowUploaderModal] = useState(false);
 
-  // Selected applicant for detail modal
-  const [selectedApplicant, setSelectedApplicant] = useState<ApplicantRecord | null>(null);
+  // Administrative Evaluations Map (stored locally in browser)
+  const [evaluationsMap, setEvaluationsMap] = useState<Record<string, ApplicantEvaluation>>({});
+
+  // Load evaluations from localStorage on mount
+  useEffect(() => {
+    const loaded = loadEvaluationsFromStorage();
+    setEvaluationsMap(loaded);
+  }, []);
+
+  // Merge raw applicants with administrative evaluations in-memory
+  const applicants = useMemo(() => {
+    return rawApplicants.map((applicant) => ({
+      ...applicant,
+      evaluation: evaluationsMap[applicant.id] || applicant.evaluation
+    }));
+  }, [rawApplicants, evaluationsMap]);
+
+  // Selected applicant for detail modal / drawer
+  const [selectedApplicantId, setSelectedApplicantId] = useState<string | null>(null);
+
+  const selectedApplicant = useMemo(() => {
+    if (!selectedApplicantId) return null;
+    return applicants.find(a => a.id === selectedApplicantId) || null;
+  }, [selectedApplicantId, applicants]);
 
   const isAr = lang === 'ar';
 
   const handleDataLoaded = (newApplicants: ApplicantRecord[], loadedFileName: string) => {
-    setApplicants(newApplicants);
+    setRawApplicants(newApplicants);
     setFileName(loadedFileName);
     setShowUploaderModal(false);
     setActiveTab('overview');
   };
 
+  const handleSaveEvaluation = (updatedEval: ApplicantEvaluation) => {
+    const newMap = saveEvaluationToStorage(updatedEval);
+    setEvaluationsMap(newMap);
+  };
+
+  const handleQuickToggleShortlist = (applicantId: string) => {
+    const current = evaluationsMap[applicantId];
+    const isShortlisted = !current?.isShortlisted;
+    const updatedEval: ApplicantEvaluation = {
+      ...current,
+      applicantId,
+      isShortlisted,
+      statusOverride: isShortlisted ? 'Shortlisted' : (current?.statusOverride || 'Pending Review'),
+      updatedAt: new Date().toISOString(),
+      isReviewed: true
+    };
+    const newMap = saveEvaluationToStorage(updatedEval);
+    setEvaluationsMap(newMap);
+  };
+
+  const handleReloadEvaluations = () => {
+    const fresh = loadEvaluationsFromStorage();
+    setEvaluationsMap(fresh);
+  };
+
   const handleLogout = () => {
     setIsAuthenticated(false);
-    setApplicants([]);
+    setRawApplicants([]);
     setFileName(null);
   };
 
@@ -93,13 +144,19 @@ export const DashboardApp: React.FC<DashboardAppProps> = ({ onBackToRecruitment 
           {activeTab === 'applicants' && (
             <ApplicantsTablePage 
               applicants={applicants}
-              onSelectApplicant={setSelectedApplicant}
+              onSelectApplicant={(a) => setSelectedApplicantId(a.id)}
+              onQuickToggleShortlist={handleQuickToggleShortlist}
               lang={lang}
             />
           )}
 
           {activeTab === 'reports' && (
-            <ReportsPage applicants={applicants} summary={summary} lang={lang} />
+            <ReportsPage 
+              applicants={applicants} 
+              summary={summary} 
+              onEvaluationsReloaded={handleReloadEvaluations}
+              lang={lang} 
+            />
           )}
         </div>
       )}
@@ -107,10 +164,10 @@ export const DashboardApp: React.FC<DashboardAppProps> = ({ onBackToRecruitment 
       {/* Upload New File Modal Overlay (when already viewing data) */}
       {showUploaderModal && applicants.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-brand-dark rounded-3xl border border-slate-700 w-full max-w-xl p-6 relative">
+          <div className="bg-[#0a1120] rounded-3xl border border-slate-700 w-full max-w-xl p-6 relative shadow-2xl">
             <button
               onClick={() => setShowUploaderModal(false)}
-              className="absolute top-4 left-4 p-2 rounded-xl bg-brand-navy hover:bg-slate-800 text-slate-400 hover:text-white transition"
+              className="absolute top-4 left-4 p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition border border-slate-800"
             >
               ✕
             </button>
@@ -122,11 +179,12 @@ export const DashboardApp: React.FC<DashboardAppProps> = ({ onBackToRecruitment 
         </div>
       )}
 
-      {/* Applicant Detail Profile Modal */}
+      {/* Applicant Detail Profile & Evaluation Modal / Drawer */}
       <ApplicantDetailModal
         applicant={selectedApplicant}
         isOpen={Boolean(selectedApplicant)}
-        onClose={() => setSelectedApplicant(null)}
+        onClose={() => setSelectedApplicantId(null)}
+        onSaveEvaluation={handleSaveEvaluation}
         lang={lang}
       />
     </DashboardLayout>
