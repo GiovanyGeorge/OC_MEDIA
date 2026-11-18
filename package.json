@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:rules": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.js",
+    "test:rules:emulator": "firebase emulators:exec --only firestore \"npm run test:rules\""
   },
   "dependencies": {
     "canvas-confetti": "^1.9.3",
+    "firebase": "^13.4.0",
     "framer-motion": "^14.11.1",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
@@ -18,13 +21,20 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@types/canvas-confetti": "^1.9.0",
+    "@types/jest": "^30.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
+    "firebase-admin": "^14.5.1",
+    "firebase-tools": "^15.36.0",
+    "jest": "^30.5.2",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
+    "ts-jest": "^29.4.15",
     "typescript": "~5.6.2",
     "vite": "^6.0.1"
   }

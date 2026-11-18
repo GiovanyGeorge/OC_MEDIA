@@ -1,0 +1,226 @@
+rules_version = '2';
+
+// =============================================================================
+// OC Media Platform — Firestore Security Rules
+// Phase 1: Production-ready security rules
+//
+// Design principles:
+// - Deny by default (explicit allowance only)
+// - Admin role is ALWAYS determined by presence in `adminUsers/{uid}` collection
+//   (server-controlled — users can NEVER write this collection themselves)
+// - Members cannot read adminUsers, privateNotes, or other members' private data
+// - activationCodes is completely off-limits to all client-side code
+// - Portfolio ownership is validated on every write
+// - Members can only update an explicitly permitted subset of their own profile
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // Helper functions
+    // =========================================================================
+
+    /** True when the request comes from a signed-in user */
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    /**
+     * True when the caller's UID appears in adminUsers collection.
+     * This is the ONLY trusted admin check — users can never self-assign this.
+     */
+    function isAdmin() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+
+    /** True when the caller owns the document identified by uid */
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    /**
+     * True when the calling member's account is active (not suspended).
+     * Falls back to false when the document doesn't exist or has no accountStatus.
+     */
+    function isMemberActive() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/members/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/members/$(request.auth.uid)).data.accountStatus == 'active';
+    }
+
+    // --- Field validation helpers -------------------------------------------
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidUrl(val) {
+      return val is string &&
+             val.size() > 0 &&
+             val.size() <= 500 &&
+             (val.matches('https?://.*'));
+    }
+
+    function isValidPortfolioType(val) {
+      return val in ['link', 'image', 'drive_pdf'];
+    }
+
+    // =========================================================================
+    // Collection: applications/{referenceId}
+    // Admin-only read/write. Members and unauthenticated users are denied.
+    // =========================================================================
+    match /applications/{referenceId} {
+      allow read, write: if isAdmin();
+    }
+
+    // =========================================================================
+    // Collection: members/{uid}
+    // =========================================================================
+    match /members/{uid} {
+      // Owner or admin can read their own member document
+      allow read: if isOwner(uid) || isAdmin();
+
+      // Only admin may create a new member document (activation backend uses Admin SDK)
+      allow create: if isAdmin();
+
+      // Admin can update any field without restriction
+      // Member can update ONLY the explicitly listed fields
+      allow update: if isAdmin() ||
+                       (
+                         isOwner(uid) &&
+                         isMemberActive() &&
+                         // Restrict to only these updateable fields
+                         request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['currentSkills', 'currentEquipment', 'phone', 'bio', 'updatedAt']) &&
+                         // Type validation for each permitted field
+                         (
+                           !('phone' in request.resource.data.diff(resource.data).affectedKeys()) ||
+                           isValidString(request.resource.data.phone, 10, 20)
+                         ) &&
+                         (
+                           !('bio' in request.resource.data.diff(resource.data).affectedKeys()) ||
+                           isValidString(request.resource.data.bio, 0, 1000)
+                         ) &&
+                         (
+                           !('currentSkills' in request.resource.data.diff(resource.data).affectedKeys()) ||
+                           request.resource.data.currentSkills is list
+                         ) &&
+                         (
+                           !('currentEquipment' in request.resource.data.diff(resource.data).affectedKeys()) ||
+                           request.resource.data.currentEquipment is list
+                         ) &&
+                         // Immutable fields must not change
+                         request.resource.data.role == resource.data.role &&
+                         request.resource.data.accountStatus == resource.data.accountStatus &&
+                         request.resource.data.referenceId == resource.data.referenceId &&
+                         request.resource.data.uid == resource.data.uid
+                       );
+
+      // No client-side deletes
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // Collection: activationCodes/{codeHash}
+    // Backend (Admin SDK) ONLY — completely inaccessible from client-side code.
+    // =========================================================================
+    match /activationCodes/{codeHash} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Collection: adminUsers/{uid}
+    // Admin-only read. No client-side writes ever (Admin SDK only).
+    // Members must NEVER see this collection.
+    // =========================================================================
+    match /adminUsers/{uid} {
+      allow read: if isAdmin();
+      allow write: if false;  // Admin SDK writes only
+    }
+
+    // =========================================================================
+    // Collection: portfolios/{itemId}
+    // =========================================================================
+    match /portfolios/{itemId} {
+      // Owner or admin can read
+      allow read: if isAdmin() ||
+                     (isAuthenticated() && resource.data.memberUid == request.auth.uid);
+
+      // Active member can create their OWN portfolio items
+      allow create: if isMemberActive() &&
+                       // memberUid must be the caller's own UID (no spoofing)
+                       request.resource.data.memberUid == request.auth.uid &&
+                       // Required field validation
+                       isValidString(request.resource.data.title, 1, 200) &&
+                       isValidUrl(request.resource.data.url) &&
+                       isValidPortfolioType(request.resource.data.type) &&
+                       request.resource.data.isPublic is bool;
+
+      // Owner can update (admin can update freely)
+      allow update: if isAdmin() ||
+                       (
+                         isMemberActive() &&
+                         resource.data.memberUid == request.auth.uid &&
+                         // memberUid is immutable — cannot be changed even by owner
+                         request.resource.data.memberUid == resource.data.memberUid &&
+                         isValidString(request.resource.data.title, 1, 200) &&
+                         isValidUrl(request.resource.data.url) &&
+                         isValidPortfolioType(request.resource.data.type) &&
+                         request.resource.data.isPublic is bool
+                       );
+
+      // Owner or admin can delete
+      allow delete: if isAdmin() ||
+                       (isMemberActive() && resource.data.memberUid == request.auth.uid);
+    }
+
+    // =========================================================================
+    // Collection: evaluations/{targetUid}
+    // =========================================================================
+    match /evaluations/{targetUid} {
+      // The evaluated member can read their own evaluation; admin can read all
+      allow read: if isOwner(targetUid) || isAdmin();
+
+      // Only admin may write evaluations
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // Collection: feedback/{fbId}
+    // =========================================================================
+    match /feedback/{fbId} {
+      // Member can read feedback addressed to them; admin can read all
+      allow read: if isAdmin() ||
+                     (isAuthenticated() && resource.data.memberUid == request.auth.uid);
+
+      // Only admin may create/update feedback
+      allow create, update: if isAdmin();
+
+      // No client-side deletes
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // Collection: privateNotes/{noteId}
+    // Admin ONLY — completely inaccessible to members.
+    // =========================================================================
+    match /privateNotes/{noteId} {
+      allow read, write: if isAdmin();
+    }
+
+    // =========================================================================
+    // Collection: systemSettings/{settingDoc}
+    // =========================================================================
+    match /systemSettings/{settingDoc} {
+      // The 'public' document is intentionally readable by everyone (even unauthenticated)
+      // e.g. recruitmentOpen, whatsappGroupLink, platformName
+      allow read: if settingDoc == 'public' || isAdmin();
+
+      // Only admin can write any settings document
+      allow write: if isAdmin();
+    }
+
+  }
+}
