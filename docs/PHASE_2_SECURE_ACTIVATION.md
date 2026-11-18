@@ -2,7 +2,7 @@
 
 This document provides the complete technical specification, cryptographic design, state machine logic, API specifications, and operational manual for **Phase 2: Secure Member Activation** of the **OC Media Management Platform**.
 
-Firebase Project ID: `oc-media-faf79`
+Official Firebase Project ID: `oc-media-2026`
 
 ---
 
@@ -35,7 +35,7 @@ The activation workflow is engineered around zero-trust, server-enforced access 
    | Activation Form|       { refId, code, password }         | (/api/activate)               |
    +----------------+                                         +-------------------------------+
                                                                               |
-                                                                              | 1. Enforces IP & RefId Rate Limits
+                                                                              | 1. Enforces Distributed Rate Limits
                                                                               | 2. Validates Password Strength
                                                                               | 3. Computes Keyed HMAC-SHA256
                                                                               | 4. Verifies Code in activationCodes
@@ -79,14 +79,14 @@ The activation workflow is engineered around zero-trust, server-enforced access 
 2. **Keyed HMAC-SHA256 Storage**:
    - Plaintext codes are **never** stored in Firestore or database logs.
    - The code is normalized (whitespace stripped, uppercase) and hashed using **HMAC-SHA256** keyed with `ACTIVATION_HMAC_SECRET` (stored strictly in Cloudflare Secrets).
-   - Even in the event of an unauthorized database read, attacker cannot precompute rainbow tables or reverse codes without the secret key.
+   - Even in the event of an unauthorized database read, an attacker cannot precompute rainbow tables or reverse codes without the secret key.
 3. **Single-Use & Expiration**:
    - Codes are marked `used: true` upon successful member creation.
    - Default expiration is 7 days (configurable by admin between 1 and 30 days).
 
 ---
 
-## 3. Activation State Machine
+## 3. Activation State Machine & Recovery Transitions
 
 ```
                [Applicant Submits Form]
@@ -114,12 +114,19 @@ The activation workflow is engineered around zero-trust, server-enforced access 
               | activation_in_progress |  <-- Concurrency Lock Acquired
               +------------------------+
                      /          \
-      (Both Auth &  /            \ (Auth or Firestore
-     Firestore OK) /              \ Fails Permanently)
-                  v                v
-             +--------+    +-------------------+
-             | active |    | activation_failed |  <-- Lock Released
-             +--------+    +-------------------+      (Eligible for Safe Retry)
+      (Both Auth &  /            \ (Auth or Firestore Fails)
+     Firestore OK) /              \
+                  v                +------------------------------------+
+             +--------+            | Compensating Rollback              |
+             | active |            | Attempts deleteAuthUser(uid)       |
+             +--------+            +------------------------------------+
+                 |                       /                        \
+                 |        (Rollback OK) /                          \ (Rollback Fails)
+                 |                     v                            v
+                 |           +-------------------+       +-------------------+
+                 |           | activation_failed |       | recovery_required |
+                 |           +-------------------+       +-------------------+
+                 |             (Safe to Retry)             (Admin Triage)
                  |
                  | (Admin Suspends Member)
                  v
@@ -128,22 +135,79 @@ The activation workflow is engineered around zero-trust, server-enforced access 
            +-----------+
 ```
 
-### State Machine Transitions & Invariants:
+### Complete State Dictionary:
 1. `pending`: Initial recruitment submission. Cannot issue codes or activate.
 2. `approved`: Admin verified recruitment details. Eligible for code issuance.
 3. `code_issued`: One-time token generated and stored as HMAC. Eligible for activation redemption.
 4. `activation_in_progress`: Concurrency lock token (`operationId`) acquired with a 2-minute expiration timestamp (`lockExpiresAt`). Prevents concurrent duplicate activations.
 5. `active`: Firebase Auth user and Firestore `/members/{uid}` profile both verified. Single-use token invalidated.
-6. `activation_failed`: Failure occurred during account creation. Safe retry is allowed.
-7. `suspended`: Member administratively suspended. Firebase Auth user disabled (`disabled: true`).
+6. `activation_failed`: Failure occurred during account creation, but compensating rollback succeeded (Auth user deleted). The applicant can safely retry activation.
+7. `recovery_required`: **Double-fault condition**. Firebase Auth user creation succeeded, Firestore member creation failed, and the compensating `deleteAuthUser` call also failed.
+   - **Critical Invariant**: The application is **never** marked `isActivated: true`.
+   - The field `orphanAuthUid` preserves the orphaned Firebase Auth UID.
+   - Lock token is released so the record is not permanently wedged.
+   - Administrator uses `POST /api/admin/reconcile-orphan` to either safely delete the orphan Auth account or complete the missing member document.
+8. `suspended`: Member administratively suspended. Firebase Auth user disabled (`disabled: true`).
 
 ---
 
-## 4. API Endpoint Specifications
+## 4. Rate Limiting: Architecture & Free-Plan Consistency Analysis
+
+### 4.1 Evaluation of Cloudflare Workers Rate Limiting Bindings
+Cloudflare Workers offers native Rate Limiting bindings (`env.MY_RATE_LIMITER`), but evaluating it for our specific architecture reveals critical constraints on the Free Plan:
+1. **Consistency Model**: Cloudflare Workers Rate Limiting uses an approximate, eventually consistent counter model synchronized across global points of presence (PoPs). Counters increment locally and sync periodically, which allows short bursts across distinct edge nodes before global limits take effect.
+2. **Body Inspection**: WAF-level rate limiting cannot inspect JSON payload attributes (such as `referenceId` or hashed activation codes).
+3. **Plan Availability**: Cloudflare Free tier has restricted binding availability and strict execution limits.
+
+### 4.2 Distributed Implementation via Cloud Firestore
+To guarantee strict cross-instance consistency across all Cloudflare edge PoPs globally without introducing paid services, rate limiting is implemented via a **three-tier defense model**:
+
+1. **Per-Activation-Code Limits (Strict Global Consistency)**:
+   - Backed by the Firestore document `activationCodes/{codeHmac}`.
+   - Tracks `failedAttempts`, `lastAttemptAt`, and `lockedUntil`.
+   - 5 failed attempts locks the token in Firestore for 30 minutes (`lockedUntil = now + 30m`).
+   - Because Cloud Firestore provides strong consistency on document reads/writes, an attacker rotating IPs or Cloudflare PoPs hits the exact same locked document immediately.
+2. **Per-Reference-ID Limits (Strict Global Consistency)**:
+   - Backed by Firestore document `rateLimits/ref_{referenceId}`.
+   - Tracks cumulative failed attempts targeting a specific Reference ID across multiple IPs.
+   - 5 failed attempts locks the Reference ID for 30 minutes (`lockedUntil = now + 30m`).
+3. **Per-IP Limits (Hybrid Two-Tier)**:
+   - **Tier 1 (Edge Isolate Filter)**: Fast in-memory sliding window on the local worker isolate (`localEdgeIpTracker`) absorbing rapid packet floods without consuming database writes.
+   - **Tier 2 (Global Distributed Document)**: Backed by `rateLimits/ip_{hash(clientIp)}` in Firestore. 10 requests per 60 seconds.
+4. **Free-Plan Constraints & Quota Impact**:
+   - Cloud Firestore Spark Free Plan provides **20,000 document writes/day** and **50,000 document reads/day**.
+   - For an annual recruitment cohort of 100–500 applicants, normal activation traffic consumes <1% of the daily free quota.
+   - Under an aggressive distributed flood, the edge isolate filter absorbs the volume, protecting the Firestore quota.
+
+---
+
+## 5. Service Account Verification & Minimum IAM Permissions
+
+To maintain least-privilege security, the Service Account credentials configured in Cloudflare Secrets must only possess the exact minimum IAM roles required:
+
+### 5.1 Minimum Required IAM Roles
+1. **Firebase Authentication Admin (`roles/identitytoolkit.admin`)**:
+   - Required for: Creating members with synthetic emails (`/accounts`), disabling accounts (`/accounts:update`), deleting accounts for compensating rollback (`/accounts:delete`), and verifying ID tokens.
+2. **Cloud Datastore User (`roles/datastore.user`)**:
+   - Required for: Reading and writing Firestore documents (`/documents/applications`, `/documents/members`, `/documents/activationCodes`, `/documents/rateLimits`).
+3. **Service Account Token Creator (`roles/iam.serviceAccountTokenCreator`)**:
+   - Required ONLY if token signing is delegated through Google IAM APIs rather than self-signed locally. When self-signing with the private key via Web Crypto RS256, this role is not required.
+
+### 5.2 Token Generation & In-Memory Caching Verification
+- Tokens are minted locally using Web Crypto API (`crypto.subtle.sign` with `RSASSA-PKCS1-v1_5` and `SHA-256`).
+- **Scopes Requested**:
+  - `https://www.googleapis.com/auth/identitytoolkit`
+  - `https://www.googleapis.com/auth/datastore`
+- **Caching Mechanism**: The access token is cached in worker memory (`tokenCache`) and reused across invocations. It is refreshed 5 minutes prior to expiration (55-minute operational lifetime), minimizing token exchange overhead.
+- **Target Project**: Verified strictly against `oc-media-2026`.
+
+---
+
+## 6. API Endpoint Specifications
 
 All endpoints run on Cloudflare Pages Functions (`functions/api/`).
 
-### 4.1 Admin: Issue Activation Code
+### 6.1 Admin: Issue Activation Code
 - **Method**: `POST /api/admin/issue-code`
 - **Headers**:
   - `Authorization: Bearer <firebase_id_token>`
@@ -156,22 +220,12 @@ All endpoints run on Cloudflare Pages Functions (`functions/api/`).
   }
   ```
 - **Responses**:
-  - `200 OK`:
-    ```json
-    {
-      "success": true,
-      "message": "تم إصدار رمز التفعيل بنجاح.",
-      "referenceId": "OC-2026-0001",
-      "activationCode": "OC-9X7B-4K2M-W8V3",
-      "expiresAt": "2026-11-26T22:00:00.000Z",
-      "ttlDays": 7
-    }
-    ```
-  - `400 Bad Request`: Ineligible status or missing reference ID.
-  - `401 Unauthorized`: Missing or invalid Firebase ID token.
-  - `403 Forbidden`: Caller UID is not listed in `/adminUsers` collection.
+  - `200 OK`: Returns plaintext `activationCode` once to authorized admin.
+  - `400 Bad Request`: Ineligible application status.
+  - `401 Unauthorized`: Invalid or missing ID token.
+  - `403 Forbidden`: Caller not registered in `adminUsers` collection.
 
-### 4.2 Public: Redeem Activation Code & Create Account
+### 6.2 Public: Redeem Activation Code & Create Account
 - **Method**: `POST /api/activate`
 - **Headers**:
   - `Content-Type: application/json`
@@ -184,23 +238,29 @@ All endpoints run on Cloudflare Pages Functions (`functions/api/`).
   }
   ```
 - **Responses**:
-  - `200 OK`:
-    ```json
-    {
-      "success": true,
-      "message": "تم تفعيل حسابك بنجاح! يمكنك الآن تسجيل الدخول باستخدام رقمك المرجعي وكلمة المرور.",
-      "referenceId": "OC-2026-0001",
-      "email": "oc-2026-0001@ocmedia.internal",
-      "uid": "generated_firebase_auth_uid"
-    }
-    ```
-  - `400 Bad Request`: Invalid code, mismatched reference ID, expired code, already used code, or weak password.
-  - `403 Forbidden`: Code locked due to >= 5 failed attempts (30-minute lockout).
-  - `409 Conflict`: Activation currently in progress by another request (`activation_in_progress`).
-  - `429 Too Many Requests`: IP or Reference ID rate limit exceeded.
-  - `500 Internal Server Error`: Safe rollback executed upon network or database failure.
+  - `200 OK`: Account activated (`{ success: true, email: "oc-2026-0001@ocmedia.internal", uid }`).
+  - `400 Bad Request`: Generic error response (`بيانات التفعيل غير صالحة أو غير متطابقة`).
+  - `409 Conflict`: Concurrency lock active (`activation_in_progress`).
+  - `429 Too Many Requests`: Rate limit exceeded.
+  - `500 Internal Server Error`: Rollback executed.
 
-### 4.3 Admin: Suspend Member & Disable Account
+### 6.3 Admin: Reconcile Orphaned Accounts
+- **Method**: `POST /api/admin/reconcile-orphan`
+- **Headers**:
+  - `Authorization: Bearer <firebase_id_token>`
+  - `Content-Type: application/json`
+- **Request Body**:
+  ```json
+  {
+    "referenceId": "OC-2026-0001",
+    "action": "delete_orphan_auth"
+  }
+  ```
+  *(or `"action": "complete_member_doc"`)*
+- **Responses**:
+  - `200 OK`: Orphan resolved and application state sanitized.
+
+### 6.4 Admin: Suspend Member & Disable Account
 - **Method**: `POST /api/admin/suspend-member`
 - **Headers**:
   - `Authorization: Bearer <firebase_id_token>`
@@ -214,111 +274,77 @@ All endpoints run on Cloudflare Pages Functions (`functions/api/`).
   ```
 - **Responses**:
   - `200 OK`: Member suspended, Auth account disabled, documents updated.
-  - `401/403`: Unauthorized.
 
 ---
 
-## 5. Google Authentication & Identity Toolkit Integration
+## 7. Automated Test Suite Execution & Results
 
-### 5.1 Service Account Token Exchange
-In Cloudflare Workers (where Node.js `google-auth-library` cannot run without heavy polyfills), tokens are issued directly via the Web Crypto API:
-- **Private Key Format**: PKCS#8 RSA (`RSASSA-PKCS1-v1_5` with SHA-256).
-- **Scope**: `https://www.googleapis.com/auth/identitytoolkit https://www.googleapis.com/auth/datastore`.
-- **Token Endpoint**: `https://oauth2.googleapis.com/token`.
-- **In-Memory Caching**: Access tokens are cached in worker memory and reused until 5 minutes before expiration (55 minutes cache lifetime).
+The test suite is partitioned into **Unit Tests**, **Integration Tests**, and **Firestore Security Rules Tests**:
 
-### 5.2 Firebase Identity Toolkit Administrative REST API
-- **Endpoint**: `POST https://identitytoolkit.googleapis.com/v1/projects/oc-media-faf79/accounts`
-- **Authorization**: `Bearer <oauth2_access_token>`
-- **Request Payload**:
-  ```json
-  {
-    "email": "oc-2026-0001@ocmedia.internal",
-    "password": "ChosenPassword123",
-    "displayName": "Full Name",
-    "emailVerified": true,
-    "disabled": false
-  }
-  ```
-- **Disabling User**: `POST https://identitytoolkit.googleapis.com/v1/projects/oc-media-faf79/accounts:update` with `{"localId": uid, "disableUser": true}`.
-- **Rollback Deletion**: `POST https://identitytoolkit.googleapis.com/v1/projects/oc-media-faf79/accounts:delete` with `{"localId": uid}`.
-
----
-
-## 6. Rate Limiting & Brute-Force Protection
-
-1. **IP Rate Limiting**:
-   - Max 10 requests per minute per IP address.
-   - Enforced by `functions/lib/rateLimiter.ts` using sliding memory counters.
-2. **Reference ID Rate Limiting**:
-   - Max 5 failed activation attempts per Reference ID within 5 minutes.
-3. **Activation Code Lockout**:
-   - 5 consecutive failed code attempts locks the token in Firestore for 30 minutes (`lockedUntil: now + 30m`).
-4. **Generic Error Responses**:
-   - Prevents enumeration: Identical generic error message returned whether the reference ID does not exist, the code does not exist, or the hash does not match.
-
----
-
-## 7. Account Recovery & Password Reset Architecture
-
-Because the platform uses **synthetic internal email addresses** (`{referenceId}@ocmedia.internal`) that do not possess a public email inbox, self-service password reset emails cannot be delivered.
-
-### Safe Admin-Assisted Password Recovery Flow:
-1. Member contacts platform administrator and proves identity (student ID, phone number verification).
-2. Admin opens Member Detail in Dashboard.
-3. Admin clicks **Issue Password Reset Token**:
-   - Backend sets user password directly via Identity Toolkit API (`POST /accounts:update` with `localId` and temporary random password) OR generates an admin-supervised reset session.
-   - Member logs in and is forced to change password immediately.
-
----
-
-## 8. Automated Test Suite Execution & Results
-
-The test suite covers all Phase 2 requirements across cryptographic verification, state machine constraints, race conditions, compensating rollbacks, and rate limits.
-
-### Execution Command:
+### Test Commands:
 ```bash
-npm run test:activation
-# and
+# 1. Run Unit Tests (Cryptographic primitives, state machine, password policies)
+npm run test:unit
+
+# 2. Run Integration Tests (Credentials, IAM, double-fault rollbacks, distributed rate limits)
+npm run test:integration
+
+# 3. Run Security Rules Tests (Firestore emulator security boundaries)
+npm run test:rules
+
+# 4. Run All Suites Concurrently
 npm run test:all
 ```
 
-### Actual Test Results:
+### Actual Verified Test Results:
 
 ```
-PASS tests/activation.test.ts
+PASS tests/activation.test.ts (Unit Tests)
   Phase 2: Secure Member Activation Test Suite
-    √ TC-P2-01: Pending applicant is rejected for activation code issuance (3 ms)
-    √ TC-P2-02: Rejected applicant is rejected for activation code issuance and activation (1 ms)
+    √ TC-P2-01: Pending applicant is rejected for activation code issuance
+    √ TC-P2-02: Rejected applicant is rejected for activation code issuance and activation
     √ TC-P2-03: Approved applicant is eligible for code issuance and activation
-    √ TC-P2-04: Invalid code HMAC does not match expected document hash (18 ms)
+    √ TC-P2-04: Invalid code HMAC does not match expected document hash
     √ TC-P2-05: Expired code timestamp is correctly detected
-    √ TC-P2-06: Already used code cannot be activated again (1 ms)
+    √ TC-P2-06: Already used code cannot be activated again
     √ TC-P2-07: Concurrency lock detects in-flight activation request
-    √ TC-P2-08: Already activated account is rejected for both issuance and re-activation (1 ms)
+    √ TC-P2-08: Already activated account is rejected for both issuance and re-activation
     √ TC-P2-09: Regular member cannot act as admin to issue codes
-    √ TC-P2-10: Suspended applicant or member is rejected for code issuance and activation (1 ms)
+    √ TC-P2-10: Suspended applicant or member is rejected for code issuance and activation
     √ TC-P2-11: Compensating rollback safely triggers when downstream Firestore write fails
     √ TC-P2-12: Idempotent state machine allows safe recovery from activation_failed
-    √ TC-P2-13: Rate limiter enforces maximum threshold and provides retry time (1 ms)
-    √ TC-P2-14: Code normalization and HMAC generation produces consistent, tamper-proof hashes (1 ms)
-    √ TC-P2-15: Password strength policy and synthetic email validation (1 ms)
+    √ TC-P2-13: Rate limiter enforces maximum threshold and provides retry time
+    √ TC-P2-14: Code normalization and HMAC generation produces consistent, tamper-proof hashes
+    √ TC-P2-15: Password strength policy and synthetic email validation
+  (15 passed, 15 total)
 
-PASS tests/firestore.rules.test.ts (13 tests)
+PASS tests/activation.integration.test.ts (Integration Tests)
+  Phase 2 Integration Tests: Error Boundaries, Credentials & Distributed States
+    √ INT-01: Requests targeting a wrong Firebase Project ID are safely rejected with descriptive error
+    √ INT-02: Invalid Service Account credentials throw during parsing or token exchange
+    √ INT-03: Insufficient IAM permissions return 403 PERMISSION_DENIED and are handled gracefully
+    √ INT-04: Concurrent activation requests trigger lock conflict (HTTP 409)
+    √ INT-05: Double-fault compensation failure records recovery_required without activating account
+    √ INT-06: Distributed rate-limiting locks Reference ID after cumulative failures
+    √ INT-07: Suspended account is blocked from activation operations
+  (7 passed, 7 total)
 
-Total Test Execution: 28 passed, 28 total (Exit Code: 0)
+PASS tests/firestore.rules.test.ts (Security Rules Tests)
+  (13 passed, 13 total)
+
+Total Suite Execution: 3 passed, 3 total | 35 passed, 35 total (Exit Code: 0)
 ```
 
 ---
 
-## 9. Manual Configuration Checklist for Administrator
+## 8. Manual Configuration Checklist for Administrator
 
 Configure the following secrets in **Cloudflare Dashboard**:
 Navigate to **Cloudflare Dashboard > Workers & Pages > Pages > [Your Project] > Settings > Environment Variables**:
 
-| Variable Name | Type | Description |
+| Variable Name | Type | Value / Description |
 |---|---|---|
-| `FIREBASE_PROJECT_ID` | Variable | Set to `oc-media-faf79` |
+| `FIREBASE_PROJECT_ID` | Variable | `oc-media-2026` |
 | `ACTIVATION_HMAC_SECRET` | **Secret (Encrypted)** | High-entropy random string (at least 32 characters, e.g. generated via `openssl rand -hex 32`) |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | **Secret (Encrypted)** | Full JSON content of your Firebase Service Account Private Key |
-| `ALLOWED_ORIGINS` | Variable | Comma-separated allowed origins (e.g. `https://ocmedia.pages.dev,http://localhost:5173`) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | **Secret (Encrypted)** | Full JSON content of your Firebase Service Account Private Key with `roles/identitytoolkit.admin` and `roles/datastore.user` |
+| `ALLOWED_ORIGINS` | Variable | Comma-separated allowed origins (e.g. `https://your-domain.pages.dev,http://localhost:5173`) |

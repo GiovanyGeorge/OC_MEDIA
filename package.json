@@ -7,10 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:rules": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.js",
-    "test:rules:emulator": "firebase emulators:exec --only firestore \"npm run test:rules\"",
-    "test:activation": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/activation.test.ts --config jest.config.js",
-    "test:all": "firebase emulators:exec --only firestore \"npm run test:rules\""
+    "test:unit": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/activation.test.ts --config jest.config.js",
+    "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/activation.integration.test.ts --config jest.config.js",
+    "test:rules": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/firestore.rules.test.ts --config jest.config.js",
+    "test:all": "firebase emulators:exec --only firestore \"cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.js\""
   },
   "dependencies": {
     "canvas-confetti": "^1.9.3",

@@ -22,7 +22,11 @@ import {
   checkActivationEligibility,
   isActivationLocked,
 } from '../lib/stateMachine';
-import { checkRateLimit, refIdTracker } from '../lib/rateLimiter';
+import {
+  checkDistributedIpRateLimit,
+  isReferenceIdLocked,
+  recordFailedReferenceAttempt,
+} from '../lib/rateLimiter';
 import { ApplicationDocument, ActivationCodeDocument } from '../../src/lib/firebaseTypes';
 
 interface Env {
@@ -33,14 +37,26 @@ interface Env {
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
+  const projectId = env.FIREBASE_PROJECT_ID || 'oc-media-2026';
+  const hmacSecret = env.ACTIVATION_HMAC_SECRET;
 
-  // 1. Rate Limiting Check (IP & Reference ID)
+  if (!hmacSecret) {
+    return new Response(
+      JSON.stringify({ error: 'النظام قيد التهيئة. يرجى مراجعة إدارة المنصة.' }),
+      { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } }
+    );
+  }
+
+  const credentials = parseServiceAccount(env);
+  const accessToken = await getGoogleAccessToken(credentials);
+
+  // 1. Distributed IP Rate Limiter (Backed by Firestore + local isolate prefilter)
   const clientIp = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-  const ipLimit = checkRateLimit(`ip:${clientIp}`, 10, 60_000);
+  const ipLimit = await checkDistributedIpRateLimit(accessToken, projectId, clientIp, 10, 60_000);
   if (!ipLimit.allowed) {
     return new Response(
       JSON.stringify({
-        error: `تم تجاوز الحد المسموح به للطلبات. يرجى الانتظار لمدة ${ipLimit.retryAfterSec} ثانية.`,
+        error: ipLimit.reason || `تم تجاوز الحد المسموح به للطلبات. يرجى الانتظار لمدة ${ipLimit.retryAfterSec} ثانية.`,
       }),
       { status: 429, headers: { 'Content-Type': 'application/json;charset=utf-8' } }
     );
@@ -68,12 +84,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     );
   }
 
-  // Per-ReferenceID rate limiting (brute force protection)
-  const refLimit = checkRateLimit(`ref:${referenceId}`, 5, 300_000, refIdTracker);
-  if (!refLimit.allowed) {
+  // Distributed Reference-ID Lockout Check (Brute-force protection across all IPs)
+  const refLock = await isReferenceIdLocked(accessToken, projectId, referenceId);
+  if (refLock.locked) {
     return new Response(
       JSON.stringify({
-        error: `تم تجاوز الحد الأقصى للمحاولات لهذا الرقم المرجعي. يرجى المحاولة بعد ${refLimit.retryAfterSec} ثانية.`,
+        error: `تم قفل محاولات التفعيل لهذا الرقم المرجعي مؤقتاً لتكرار المحاولات الخاطئة. يرجى المحاولة بعد ${refLock.retryAfterSec} ثانية.`,
       }),
       { status: 429, headers: { 'Content-Type': 'application/json;charset=utf-8' } }
     );
@@ -91,19 +107,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     );
   }
 
-  const projectId = env.FIREBASE_PROJECT_ID || 'oc-media-faf79';
-  const hmacSecret = env.ACTIVATION_HMAC_SECRET;
-
-  if (!hmacSecret) {
-    return new Response(
-      JSON.stringify({ error: 'النظام قيد التهيئة. يرجى مراجعة إدارة المنصة.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } }
-    );
-  }
-
-  const credentials = parseServiceAccount(env);
-  const accessToken = await getGoogleAccessToken(credentials);
-
   // 3. Verify Activation Code Keyed Hash
   const codeHmac = await computeCodeHmac(activationCode, hmacSecret);
   const codeDoc = await getDocument<ActivationCodeDocument>(
@@ -115,6 +118,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   // Generic rejection if code not found or belongs to another referenceId
   if (!codeDoc || codeDoc.referenceId !== referenceId) {
+    // Record failed attempt against this referenceId in distributed Firestore
+    await recordFailedReferenceAttempt(accessToken, projectId, referenceId);
     return new Response(
       JSON.stringify({ error: 'بيانات التفعيل غير صالحة أو غير متطابقة.' }),
       { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } }
@@ -259,32 +264,67 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     );
   } catch (firestoreErr) {
-    // Compensating Rollback: Delete the newly created Firebase Auth user
+    // Compensating Rollback: Attempt to delete the newly created Firebase Auth user
+    let rollbackSuccess = false;
     try {
       await deleteAuthUser(accessToken, projectId, authUid);
+      rollbackSuccess = true;
     } catch (deleteErr) {
       console.error('Failed compensating rollback of Auth user:', deleteErr);
+      rollbackSuccess = false;
     }
 
-    // Reset application status to activation_failed and release lock
-    await patchDocument(
-      accessToken,
-      projectId,
-      'applications',
-      referenceId,
-      {
-        activationStatus: 'activation_failed',
-        lockToken: null,
-        lockExpiresAt: null,
-        updatedAt: new Date(),
-      },
-      ['activationStatus', 'lockToken', 'lockExpiresAt', 'updatedAt']
-    );
+    if (rollbackSuccess) {
+      // Clean rollback: reset application state so user can retry safely
+      await patchDocument(
+        accessToken,
+        projectId,
+        'applications',
+        referenceId,
+        {
+          activationStatus: 'activation_failed',
+          lockToken: null,
+          lockExpiresAt: null,
+          updatedAt: new Date(),
+        },
+        ['activationStatus', 'lockToken', 'lockExpiresAt', 'updatedAt']
+      );
 
-    return new Response(
-      JSON.stringify({ error: 'فشل استكمال إنشاء ملف العضو. تم التراجع عن العملية بأمان، يرجى إعادة المحاولة.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } }
-    );
+      return new Response(
+        JSON.stringify({ error: 'فشل استكمال إنشاء ملف العضو. تم التراجع عن العملية بأمان، يرجى إعادة المحاولة.' }),
+        { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } }
+      );
+    } else {
+      // CRITICAL: Double-fault scenario (Firestore member doc failed AND Auth deletion rollback failed)
+      // Transition to explicit 'recovery_required' state:
+      // - NEVER mark isActivated as true
+      // - Record orphanAuthUid so admin reconciliation workflow can resolve
+      // - Release lockToken so operations aren't permanently locked
+      await patchDocument(
+        accessToken,
+        projectId,
+        'applications',
+        referenceId,
+        {
+          activationStatus: 'recovery_required',
+          orphanAuthUid: authUid,
+          recoveryRequired: true,
+          recoveryReason: 'FIRESTORE_WRITE_AND_AUTH_ROLLBACK_FAILED',
+          lockToken: null,
+          lockExpiresAt: null,
+          updatedAt: new Date(),
+        },
+        ['activationStatus', 'orphanAuthUid', 'recoveryRequired', 'recoveryReason', 'lockToken', 'lockExpiresAt', 'updatedAt']
+      );
+
+      return new Response(
+        JSON.stringify({
+          error: 'حدث خطأ غير متوقع أثناء إعداد الحساب. تم تسجيل الحالة بأمان لإدارة المنصة، يرجى التواصل مع الإدارة برقمك المرجعي.',
+          recoveryRequired: true,
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } }
+      );
+    }
   }
 
   // 8. Step 3: Finalize Activation (Mark Code Used & Application Active)

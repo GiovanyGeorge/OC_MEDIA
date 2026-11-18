@@ -32,7 +32,7 @@ import {
   checkActivationEligibility,
   isActivationLocked,
 } from '../functions/lib/stateMachine';
-import { checkRateLimit } from '../functions/lib/rateLimiter';
+import { checkEdgeLocalRateLimit as checkRateLimit } from '../functions/lib/rateLimiter';
 import { ApplicationDocument } from '../src/lib/firebaseTypes';
 
 describe('Phase 2: Secure Member Activation Test Suite', () => {

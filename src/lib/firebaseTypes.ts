@@ -22,7 +22,8 @@ export type ActivationStatus =
   | 'code_issued'            // Admin generated one-time activation code
   | 'activation_in_progress' // Activation request currently processing with lock
   | 'active'                 // Successfully activated, member profile created
-  | 'activation_failed'      // Activation attempt failed, requires retry or recovery
+  | 'activation_failed'      // Activation attempt failed, safe to retry
+  | 'recovery_required'      // Rollback double-fault (orphaned Auth user), requires reconciliation
   | 'suspended';             // Member account has been administratively suspended
 
 /** Member roles — only two exist */
@@ -73,6 +74,15 @@ export interface ApplicationDocument {
 
   /** Current or last operation ID */
   operationId?: string;
+
+  /** Orphan Auth UID if rollback failed during account creation */
+  orphanAuthUid?: string;
+
+  /** Flag indicating an administrator must reconcile this orphaned account */
+  recoveryRequired?: boolean;
+
+  /** Detail reason for recovery requirement */
+  recoveryReason?: string;
 
   /** Firebase Auth UID assigned after successful activation */
   memberUid?: string;

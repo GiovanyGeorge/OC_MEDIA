@@ -34,7 +34,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const idToken = authHeader.substring(7).trim();
-  const projectId = env.FIREBASE_PROJECT_ID || 'oc-media-faf79';
+  const projectId = env.FIREBASE_PROJECT_ID || 'oc-media-2026';
   const hmacSecret = env.ACTIVATION_HMAC_SECRET;
 
   if (!hmacSecret) {
