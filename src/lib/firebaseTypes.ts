@@ -18,12 +18,12 @@ export type ApplicationStatus = 'pending' | 'approved' | 'rejected';
 
 /** Activation state machine stages */
 export type ActivationStatus =
-  | 'approved'          // Admin approved, not yet activated
-  | 'activation_locked' // Admin generated activation code
-  | 'account_creating'  // Backend is creating Firebase Auth + Firestore member doc
-  | 'active'            // Successfully activated
-  | 'recovery_required' // Partial failure during account_creating — needs retry
-  | 'activation_failed'; // Unrecoverable failure
+  | 'approved'               // Admin approved application, eligible for activation
+  | 'code_issued'            // Admin generated one-time activation code
+  | 'activation_in_progress' // Activation request currently processing with lock
+  | 'active'                 // Successfully activated, member profile created
+  | 'activation_failed'      // Activation attempt failed, requires retry or recovery
+  | 'suspended';             // Member account has been administratively suspended
 
 /** Member roles — only two exist */
 export type MemberRole = 'admin' | 'member';
@@ -59,11 +59,20 @@ export interface ApplicationDocument {
   /** Activation state machine */
   activationStatus?: ActivationStatus;
 
-  /** SHA-256 hash of the one-time activation code (never the plaintext) */
+  /** SHA-256 keyed HMAC of the one-time activation code (never the plaintext) */
   activationCodeHash?: string;
 
-  /** When the activation code expires (7 days after generation) */
+  /** When the activation code expires */
   activationCodeExpiresAt?: Timestamp;
+
+  /** Concurrency control lock token for in-flight activation */
+  lockToken?: string;
+
+  /** Lock expiration timestamp to prevent deadlock */
+  lockExpiresAt?: Timestamp;
+
+  /** Current or last operation ID */
+  operationId?: string;
 
   /** Firebase Auth UID assigned after successful activation */
   memberUid?: string;
